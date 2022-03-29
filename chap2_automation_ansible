@@ -1,0 +1,103 @@
+[student@workstation automation-ansible]$ cat hello.yml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+spec:
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - image: quay.io/redhattraining/hello-world-nginx:v1.0
+          name: hello
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+spec:
+  ports:
+    - port: 80
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: hello
+  type: ClusterIP
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: hello
+  name: hello
+spec:
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: hello
+---
+
+[student@workstation automation-ansible]$
+
+[student@workstation automation-ansible]$ cat k8s.yml 
+- name: Demonstrate k8s modules
+  hosts: localhost
+  become: false
+  vars:
+    namespace: automation-ansible
+  module_defaults:
+    group/k8s:
+      namespace: "{{ namespace }}"
+      ca_cert: "/etc/pki/tls/certs/ca-bundle.crt"
+  tasks:
+    - name: Create the project
+      k8s:
+        api_version: project.openshift.io/v1
+        kind: Project
+        name: "{{ namespace }}"
+        state: present
+        namespace: ""
+
+    - name: Create objects from the manifest
+      k8s:
+        state: present
+        src: "{{ playbook_dir + '/hello.yml' }}"
+
+    - name: Get a info about all of the pods in the namespace
+      k8s_info:
+        kind: Pod
+
+    - name: Scale deployment up
+      k8s_scale:
+        kind: Deployment
+        name: hello
+        replicas: 3
+
+    - name: Get hostname of the route
+      k8s_info:
+        kind: Route
+        name: hello
+      register: route
+
+    - name: Test access to the app
+      uri:
+        url: "http://{{ route.resources[0].spec.host }}"
+        return_content: yes
+      register: response
+      until: response.status == 200
+      retries: 10
+      delay: 5
+
+    - name: Display response of the application
+      debug:
+        var: response.content
+[student@workstation automation-ansible]$
