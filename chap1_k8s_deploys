@@ -1,0 +1,159 @@
+[student@workstation k8s-deploy]$ cat hello.yml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: k8s-deploy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - image: quay.io/redhattraining/hello-world-nginx:v1.0
+          name: hello
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: k8s-deploy
+spec:
+  ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: hello
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+  namespace: k8s-deploy
+spec:
+  rules:
+    - host: hello.apps.ocp4.example.com
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hello
+                port:
+                  number: 8080
+---
+
+[student@workstation k8s-deploy]$
+
+[student@workstation k8s-deploy]$ cat ns-and-rbac.yml 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-deploy
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hello-dev
+  namespace: k8s-deploy
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: developer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+[student@workstation k8s-deploy]$ 
+
+[student@workstation base]$ pwd
+/home/student/DO380/labs/k8s-deploy/base
+[student@workstation base]$ 
+[student@workstation base]$ cat hello.yml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  namespace: k8s-deploy-prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - image: quay.io/redhattraining/versioned-hello:v1.0
+          name: hello
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+  namespace: k8s-deploy-prod
+spec:
+  ports:
+    - port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: hello
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+  namespace: k8s-deploy-prod
+spec:
+  rules:
+    - host: deploying-practice.apps.ocp4.example.com
+      http:
+        paths:
+          - path: /
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hello
+                port:
+                  number: 8080
+---
+
+[student@workstation base]$ 
+
+[student@workstation base]$ pwd
+/home/student/DO380/labs/k8s-deploy/base
+[student@workstation base]$ 
+[student@workstation base]$ cat kustomization.yml 
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - hello.yml
+[student@workstation base]$
+
+[student@workstation prod]$ pwd
+/home/student/DO380/labs/k8s-deploy/overlays/prod
+[student@workstation prod]$ cat kustomization.yml 
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: k8s-deploy-prod
+bases:
+  - ../../base
+[student@workstation prod]$
