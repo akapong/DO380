@@ -1,0 +1,132 @@
+[student@workstation auth-ldapsync]$ pwd
+/home/student/DO380/solutions/auth-ldapsync
+[student@workstation auth-ldapsync]$ ls
+cronjob.yml  cron-ldap-sync.yml  ldap-sync.yml
+[student@workstation auth-ldapsync]$ cat cronjob.yml 
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: group-sync
+  namespace: auth-ldapsync
+spec:
+  schedule: "*/1 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: hello
+            image: registry.redhat.io/openshift4/ose-cli:v4.5
+            command:
+            - /bin/sh
+            - -c
+            - oc adm groups sync --sync-config=/etc/config/cron-ldap-sync.yml --confirm
+            volumeMounts:
+              - mountPath: "/etc/config"
+                name: "ldap-sync-volume"
+              - mountPath: "/etc/secrets"
+                name: "ldap-bind-password"
+          volumes:
+            - name: "ldap-sync-volume"
+              configMap:
+                name: ldap-config
+            - name: "ldap-bind-password"
+              secret:
+                secretName: ldap-secret
+          serviceAccountName: ldap-group-syncer
+          serviceAccount: ldap-group-syncer
+[student@workstation auth-ldapsync]$ ls
+cronjob.yml  cron-ldap-sync.yml  ldap-sync.yml
+[student@workstation auth-ldapsync]$ cat cron-ldap-sync.yml 
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com
+bindPassword:
+  file: /etc/secrets/bindPassword
+insecure: false
+ca: /etc/config/ca.crt
+rfc2307:
+    groupsQuery:
+        baseDN: "cn=groups,cn=accounts,dc=ocp4,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+        filter: (objectClass=ipausergroup)
+    groupUIDAttribute: dn
+    groupNameAttributes: [ cn ]
+    groupMembershipAttributes: [ member ]
+    usersQuery:
+        baseDN: "cn=users,cn=accounts,dc=ocp4,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+    userUIDAttribute: dn
+    userNameAttributes: [ uid ]
+[student@workstation auth-ldapsync]$ cat ldap-sync.yml 
+kind: LDAPSyncConfig
+apiVersion: v1
+url: ldaps://idm.ocp4.example.com
+bindDN: uid=admin,cn=users,cn=accounts,dc=ocp4,dc=example,dc=com
+bindPassword: Redhat123@!
+insecure: false
+ca: ca.crt
+rfc2307:
+    groupsQuery:
+        baseDN: "cn=groups,cn=accounts,dc=ocp4,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+        filter: (objectClass=ipausergroup)
+    groupUIDAttribute: dn
+    groupNameAttributes: [ cn ]
+    groupMembershipAttributes: [ member ]
+    usersQuery:
+        baseDN: "cn=users,cn=accounts,dc=ocp4,dc=example,dc=com"
+        scope: sub
+        derefAliases: never
+        pageSize: 0
+    userUIDAttribute: dn
+    userNameAttributes: [ uid ]
+[student@workstation auth-ldapsync]$
+
+[student@workstation auth-ldapsync]$ pwd
+/home/student/DO380/labs/auth-ldapsync
+[student@workstation auth-ldapsync]$ ls
+ca.crt  cronjob.yml  cron-ldap-sync.yml  ldap-sync.yml  rbac.yml
+[student@workstation auth-ldapsync]$ cat rbac.yml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ldap-group-syncer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ldap-group-syncer
+rules:
+  - apiGroups:
+      - ""
+      - "user.openshift.io"
+    resources:
+      - "groups"
+    verbs:
+      - "get"
+      - "list"
+      - "create"
+      - "update"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ldap-group-syncer
+subjects:
+- kind: ServiceAccount
+  name: ldap-group-syncer
+  namespace: auth-ldapsync
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ldap-group-syncer
+[student@workstation auth-ldapsync]$
