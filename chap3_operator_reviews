@@ -1,0 +1,63 @@
+[student@workstation operators-review]$ pwd
+/home/student/DO380/labs/operators-review
+[student@workstation operators-review]$ cat file-integrity-operator.yaml 
+apiVersion: v1
+ind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: openshift-file-integrity
+
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: file-integrity-operator
+  namespace: openshift-file-integrity
+spec:
+  targetNamespaces:
+  - openshift-file-integrity
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: file-integrity-operator-sub
+  namespace: openshift-file-integrity
+spec:
+  channel: alpha
+  name: file-integrity-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace[student@workstation operators-review]$ 
+  
+  [student@workstation operators-review]$ sed -i 's/^ind/kind/' \
+> file-integrity-operator.yaml
+[student@workstation operators-review]$ cat file-integrity-operator.yaml 
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  name: openshift-file-integrity
+
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: file-integrity-operator
+  namespace: openshift-file-integrity
+spec:
+  targetNamespaces:
+  - openshift-file-integrity
+
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: file-integrity-operator-sub
+  namespace: openshift-file-integrity
+spec:
+  channel: alpha
+  name: file-integrity-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace[student@workstation operators-review]$
