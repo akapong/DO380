@@ -1,0 +1,68 @@
+[student@workstation config]$ ls
+htpasswd-secret-data  oauth.yaml
+[student@workstation config]$ cat htpasswd-secret-data 
+admin:$apr1$7YEkhvEe$mb3kTDJNcArX8JBs0zHSI.
+developer:$apr1$bqT3hyf5$6APg0X7rBYzHs1eU4n1pX/
+kustom:$apr1$cfFHtpKh$Sk89BNG0N3HVOQZnFdkJY.
+[student@workstation config]$ 
+[student@workstation config]$ cat oauth.yaml 
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  annotations:
+    release.openshift.io/create-only: "true"
+  name: cluster
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: htpasswd-secret
+    mappingMethod: claim
+    name: htpasswd_provider
+    type: HTPasswd
+[student@workstation config]$ 
+[student@workstation config]$ pwd
+/home/student/DO380/labs/gitops-resources/config
+[student@workstation config]$
+
+[student@workstation orig]$ pwd
+/home/student/DO380/labs/gitops-resources/orig
+[student@workstation orig]$ ls
+htpasswd-secret-data  kustomization.yaml  oauth.yaml  README
+[student@workstation orig]$ cat htpasswd-secret-data 
+admin:$apr1$7YEkhvEe$mb3kTDJNcArX8JBs0zHSI.
+developer:$apr1$bqT3hyf5$6APg0X7rBYzHs1eU4n1pX/
+[student@workstation orig]$ 
+[student@workstation orig]$ cat kustomization.yaml 
+resources:
+- oauth.yaml
+secretGenerator:
+- name: htpasswd-secret
+  namespace: openshift-config
+  files:
+  - htpasswd=htpasswd-secret-data
+generatorOptions:
+  disableNameSuffixHash: true
+[student@workstation orig]$ 
+[student@workstation orig]$ cat oauth.yaml 
+apiVersion: config.openshift.io/v1
+kind: OAuth
+metadata:
+  annotations:
+    release.openshift.io/create-only: "true"
+  name: cluster
+spec:
+  identityProviders:
+  - htpasswd:
+      fileData:
+        name: htpasswd-secret
+    mappingMethod: claim
+    name: htpasswd_provider
+    type: HTPasswd
+[student@workstation orig]$ 
+[student@workstation orig]$ cat README 
+These files exist to allow easy restoring the default classroom authenticatin settings.
+Just run, after login in as kubeadmin or another cluster administrator user:
+$ oc apply -k .
+
+[student@workstation orig]$
