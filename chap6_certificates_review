@@ -1,0 +1,37 @@
+[student@workstation certificates-review]$ pwd
+/home/student/DO380/labs/certificates-review
+[student@workstation certificates-review]$ ls
+apiserver-cluster.yml  ingresscontrollers.yml  proxy-cluster.yml  review-combined.pem  review-key.pem  review.pem
+[student@workstation certificates-review]$ cat apiserver-cluster.yml 
+apiVersion: config.openshift.io/v1
+kind: APIServer
+metadata:
+  name: cluster
+spec:
+  servingCerts:
+    namedCertificates:
+    - names:
+      - api.ocp4.example.com
+      servingCertificate:
+        name: review-tls
+[student@workstation certificates-review]$ cat ingresscontrollers.yml 
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  finalizers:
+  - ingresscontroller.operator.openshift.io/finalizer-ingresscontroller
+  name: default
+  namespace: openshift-ingress-operator
+spec:
+  defaultCertificate:
+    name: review-tls
+  replicas: 2
+[student@workstation certificates-review]$ cat proxy-cluster.yml 
+apiVersion: config.openshift.io/v1
+kind: Proxy
+metadata:
+  name: cluster
+spec:
+  trustedCA:
+    name: review-bundle
+[student@workstation certificates-review]$ 
