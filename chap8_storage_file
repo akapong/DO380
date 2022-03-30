@@ -1,0 +1,312 @@
+[student@workstation storage-file]$ pwd
+/home/student/DO380/labs/storage-file
+[student@workstation storage-file]$ ls
+create_client.sh  photos  resources  set-default-storageclass.yml  show_queue.sh  simulate_activity.sh
+[student@workstation storage-file]$ cat create_client.sh 
+#!/bin/bash
+
+echo "Creating a redis client to check the queue..."
+oc run redis-client \
+  --image=redis \
+  -l=app=client \
+  --generator=run-pod/v1 \
+  --timeout 60s
+echo "Waiting for redis client readiness..."
+
+ready='false'
+while [[ $ready != 'true' ]] ; do
+   echo "Waiting for redis client readiness..."
+   ready=$(oc get pod redis-client -o jsonpath='{.status.containerStatuses[0].ready}')
+   sleep 1
+done
+echo 'Redis client ready!'
+
+
+[student@workstation storage-file]$ cat set-default-storageclass.yml 
+metadata:
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+[student@workstation storage-file]$ cat show_queue.sh 
+#!/bin/bash
+
+QUEUE_NAME=uploads_queue
+
+if ! oc get pods redis-client > /dev/null ; then
+  ./create_client.sh
+fi
+
+# Display the entire range of items in the uploads queue,
+# beginning on the left side of the queue (lrange).
+oc rsh redis-client redis-cli -h redis lrange "$QUEUE_NAME" 0 -1
+
+
+[student@workstation storage-file]$ ls
+create_client.sh  photos  resources  set-default-storageclass.yml  show_queue.sh  simulate_activity.sh
+[student@workstation storage-file]$ cat simulate_activity.sh 
+#!/bin/bash
+
+QUEUE_NAME=uploads_queue
+REDIS_IMAGE="redis"
+
+function get_pod_by_label() {
+  app_label=$1
+  oc get pods --selector=app=$1 --no-headers | awk '{print $1}'
+}
+
+http_pod=$(get_pod_by_label httpd)
+redis_pod=$(get_pod_by_label redis)
+
+echo "HTTP pod: $http_pod"
+echo "Redis pod: $redis_pod"
+
+# Unpack the jpg photos from the tar archive
+tar xzvf photos/photos.tar.gz -C photos
+
+# Copy local files to web directory of the pod, to
+# simulate recent  photo/image uploads.
+oc rsync --exclude='*' --include='*.jpg' photos/ $http_pod:/var/www/html/data/uploads
+
+
+# Create a Redis client pod, to add jobs to a work queue
+oc run redis-client --image=redis -l=app=client --generator=run-pod/v1
+
+status=$(oc get pods redis-client -o jsonpath='{.status.phase}')
+ctr=0
+while [[ "$status" != "Running" ]] && [[ $ctr -lt 20 ]] ; do
+  ctr=$((ctr+1))
+  sleep 1
+  status=$(oc get pods redis-client -o jsonpath='{.status.phase}')
+done
+
+# Ensure the queue is currently empty
+oc rsh redis-client redis-cli -h redis del "$QUEUE_NAME"
+
+# Add each local photo to the work queue.
+for photo in $(ls photos | grep '.jpg$'); do
+
+  # Push the photo filename on to the end
+  # of the 'uploads_queue' (rpush).
+  echo "rpush $QUEUE_NAME $photo"
+
+# From the redis client pod, open a redis-cli session
+# to the redis service.
+done | oc rsh redis-client redis-cli -h redis
+
+[student@workstation storage-file]$ 
+[student@workstation storage-file]$ ls
+create_client.sh  photos  resources  set-default-storageclass.yml  show_queue.sh  simulate_activity.sh
+[student@workstation storage-file]$ ls photos/
+df2212f6e1ad2862.jpg  e4b5c6377ef8a5e7.jpg  ea2b20c829227816.jpg  f0e1910ac0494206.jpg  f6a0d8cfee778b04.jpg  fbc3409efdaf17de.jpg
+df8a8403e4545ab5.jpg  e5101f2624f9d7fd.jpg  ea39ed44e90a365b.jpg  f18b91585c4d3f3e.jpg  f6cb8bd3f54ba104.jpg  fc1c3a053cd4d023.jpg
+dfa292e276468e84.jpg  e537af97a5a99bb7.jpg  ea4cf88056daf95d.jpg  f1945ddd8db9784e.jpg  f763a72f425b7d94.jpg  fc2400edb71a0b9a.jpg
+dfbce24bb7a0005c.jpg  e55592f306ec1b0b.jpg  eaf3eaa47a2c9a64.jpg  f1d73bee8f24c80c.jpg  f7a1ee2daf06b9e5.jpg  fc3f89c90d56686d.jpg
+dfc87c39720bb1d0.jpg  e642c690123a11eb.jpg  eb872296f801360b.jpg  f261eceb4b222a0c.jpg  f807b724d26e5b03.jpg  fd0ae4fc32d5a99d.jpg
+dfd3d4dcf65dd5bf.jpg  e70654076c0cd027.jpg  ebc180745fbb91b7.jpg  f265339d4203aeeb.jpg  f81d0488f508c53d.jpg  fd1f1f16abef51b2.jpg
+e0581d87281bb10a.jpg  e75027fa6640892f.jpg  ebfe34afb621854e.jpg  f27c75bdbfe715e5.jpg  f8f2df4efe881a1d.jpg  fd2a3bf8f0402091.jpg
+e0754673b320c917.jpg  e756d57d50265fb1.jpg  ec59d4b45208e633.jpg  f28f05b35b503a70.jpg  f90d1afd211ffa0e.jpg  fecb78e377324906.jpg
+e099a87539cfbcf8.jpg  e7e826761f32f769.jpg  ed600d57fcee4f94.jpg  f291218f8b4dc4ba.jpg  f9cd8566b480753e.jpg  ff388f0101b3accb.jpg
+e0bb5264f76acea7.jpg  e7f1ee016155ae56.jpg  ede6e66b2fb59aab.jpg  f2a5f7eb4d652424.jpg  fa9d108a22dac323.jpg  ff47e649b23f446d.jpg
+e0d3452ed12d6c68.jpg  e8004c1e2d776b6c.jpg  ee3bffe74e65ad3c.jpg  f2d6aa23e8497a1b.jpg  faa8fa2ecdf1781d.jpg  ff581d377597e5c1.jpg
+e1005396b16ce6dc.jpg  e80b236ee02f433a.jpg  ef671ae116497fb2.jpg  f3da3b32cbcc44db.jpg  fb0bc8ce2c0abf93.jpg  ff5d6d6cc3b7c652.jpg
+e17acd05b631d330.jpg  e890373db1087107.jpg  efcfa9654f0e99c5.jpg  f3ebf9a7e88cb9f2.jpg  fb3b08bc1e05b61b.jpg  ff97fe1f2faa83f9.jpg
+e2eb1341084ca215.jpg  e890dc5c8fb65535.jpg  efd58086ceeca736.jpg  f4124588a82d57be.jpg  fb4a91591062879a.jpg  ffdf201218f92ff1.jpg
+e39702dff2b12ec4.jpg  e8e9a4ab20d85c58.jpg  f017cccfad66172e.jpg  f59af6a2141f26df.jpg  fb66071c64dac98f.jpg  fff83ea388f1a3d3.jpg
+e39871fd9fd74f55.jpg  e91ca52128724d8e.jpg  f02d882eb5d1fa26.jpg  f5b027a7f97719f2.jpg  fb691bf9990e2afa.jpg  photos.tar.gz
+e42219d8cf6f0547.jpg  ea27800cd602a2e5.jpg  f0a8acfe7a3ef8f9.jpg  f6504f7db22cc749.jpg  fb7e3ef76e377ddb.jpg
+[student@workstation storage-file]$ 
+[student@workstation storage-file]$ cd resources/
+[student@workstation resources]$ ls
+backend  httpd  redis
+[student@workstation resources]$ cd backend/
+[student@workstation backend]$ ls
+kustomization.yml  worker-job.yml
+[student@workstation backend]$ cat kustomization.yml 
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: storage-file
+commonLabels:
+  app: worker
+resources:
+  - worker-job.yml
+[student@workstation backend]$ cat worker-job.yml 
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: worker
+spec:
+  parallelism: 3
+  template:
+    metadata:
+      name: worker
+      labels:
+        app: worker
+    spec:
+      containers:
+      - env:
+          - name: QUEUE_NAME
+            value: uploads_queue
+          - name: IMG_DIR
+            value: /data/uploads
+        image: quay.io/redhattraining/obj-detector-worker
+        imagePullPolicy: Always
+        name: imgproc
+        volumeMounts:
+          - name: photos
+            mountPath: /data
+      restartPolicy: OnFailure
+      volumes:
+        - name: photos
+          persistentVolumeClaim:
+            claimName: photo-share
+[student@workstation backend]$ 
+[student@workstation backend]$ ls
+kustomization.yml  worker-job.yml
+[student@workstation backend]$ cd ..
+[student@workstation resources]$ ls
+backend  httpd  redis
+[student@workstation resources]$ cd httpd/
+[student@workstation httpd]$ ls
+deployment.yml  kustomization.yml  pvc.yml  route.yml  svc.yml
+[student@workstation httpd]$ cat deployment.yml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpd
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpd
+  template:
+    metadata:
+      labels:
+        app: httpd
+    spec:
+      containers:
+      - image: registry.access.redhat.com/rhscl/httpd-24-rhel7
+        imagePullPolicy: Always
+        name: httpd
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        - containerPort: 8443
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/www/html/data
+          name: uploads
+      restartPolicy: Always
+      volumes:
+      - name: uploads
+        persistentVolumeClaim:
+          claimName: photo-share
+[student@workstation httpd]$ cat kustomization.yml 
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: storage-file
+commonLabels:
+  app: httpd
+resources:
+  - deployment.yml
+  - svc.yml
+  - route.yml
+  - pvc.yml
+[student@workstation httpd]$ ls
+deployment.yml  kustomization.yml  pvc.yml  route.yml  svc.yml
+[student@workstation httpd]$ cat pvc.yml 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: photo-share
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-storage
+  resources:
+    requests:
+      storage: 3Gi
+[student@workstation httpd]$ cat route.yml 
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    app: httpd
+  name: httpd
+  namespace: image-processing
+spec:
+  to:
+    kind: Service
+    name: httpd
+    weight: 100
+  wildcardPolicy: None
+[student@workstation httpd]$ cat svc.yml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: httpd
+spec:
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: httpd
+
+[student@workstation httpd]$ cd ..
+[student@workstation resources]$ ls
+backend  httpd  redis
+[student@workstation resources]$ cd redis/
+[student@workstation redis]$ ls
+deployment.yml  kustomization.yml  svc.yml
+[student@workstation redis]$ cat deployment.yml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: master
+          image: quay.io/redhattraining/redis:6.2
+          env:
+            - name: MASTER
+              value: "true"
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: ephemeral-backup
+              mountPath: /data
+      volumes:
+        - name: ephemeral-backup
+          emptyDir: {}
+
+[student@workstation redis]$ cat kustomization.yml 
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: storage-file
+commonLabels:
+  app: redis
+resources:
+  - deployment.yml
+  - svc.yml
+[student@workstation redis]$ ls
+deployment.yml  kustomization.yml  svc.yml
+[student@workstation redis]$ cat svc.yml 
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: redis
+
+[student@workstation redis]$
