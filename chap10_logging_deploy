@@ -1,0 +1,277 @@
+[student@workstation logging-deploy]$ pwd
+/home/student/DO380/labs/logging-deploy
+[student@workstation logging-deploy]$ ls
+cl-minimal.yml  cluster-logging.yml  elasticsearch-operator.yml  event-router.yml  logging-operator.yml
+[student@workstation logging-deploy]$ cat cl-minimal.yml 
+apiVersion: "logging.openshift.io/v1"
+kind: "ClusterLogging"
+metadata:
+  name: "instance"
+  namespace: "openshift-logging"
+spec:
+  managementState: "Managed"
+  logStore:
+    type: "elasticsearch"
+    retentionPolicy:
+      application:
+        maxAge: 1d
+      infra:
+        maxAge: 7d
+      audit:
+        maxAge: 7d
+    elasticsearch:
+      nodeCount: 2
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      storage:
+        storageClassName: "local-blk"
+        size: 20G
+      redundancyPolicy: "MultipleRedundancy"
+      resources:
+        limits:
+          memory: "8Gi"
+        requests:
+          cpu: "1"
+          memory: "8Gi"
+  visualization:
+    type: "kibana"
+    kibana:
+      nodeSelector:
+          node-role.kubernetes.io/infra: ''
+      replicas: 1
+  curation:
+    type: "curator"
+    curator:
+      schedule: "30 3 * * *"
+  collection:
+    logs:
+      type: "fluentd"
+      fluentd: {}
+[student@workstation logging-deploy]$ cat cluster-logging.yml 
+- name: Install Cluster Logging
+  hosts: localhost
+  module_defaults:
+    group/k8s:
+      ca_cert: "/etc/pki/tls/certs/ca-bundle.crt"
+  tasks:
+    - name: Create objects from the manifests
+      k8s:
+        state: "{{ k8s_state | default('present') }}"
+        src: "{{ playbook_dir + '/' + item }}"
+      loop:
+        - logging-operator.yml
+        - elasticsearch-operator.yml
+        - event-router.yml
+
+    - name: Retrieve installed Subscription
+      k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: "cluster-logging"
+        namespace: "openshift-logging"
+      register: cl_subs
+      retries: 30
+      delay: 3
+      until:
+      - cl_subs.resources | length > 0
+      - cl_subs.resources[0].status is defined
+      - cl_subs.resources[0].status.installedCSV is defined
+      when: k8s_state is not defined or k8s_state == 'present'
+
+    - name: Wait until CSV is ready
+      k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ cl_subs.resources[0].status.installedCSV }}"
+        namespace: "openshift-logging"
+      register: cl_csv
+      retries: 30
+      delay: 3
+      until:
+      - cl_csv.resources | length > 0
+      - cl_csv.resources[0].status is defined
+      - cl_csv.resources[0].status.phase is defined
+      - cl_csv.resources[0].status.phase == "Succeeded"
+      when: k8s_state is not defined or k8s_state == 'present'
+
+    - name: Create ClusterLogging instance
+      k8s:
+        state: "{{ k8s_state | default('present') }}"
+        src: "{{ playbook_dir + '/' + item }}"
+      loop:
+        - cl-minimal.yml
+[student@workstation logging-deploy]$ ls
+cl-minimal.yml  cluster-logging.yml  elasticsearch-operator.yml  event-router.yml  logging-operator.yml
+[student@workstation logging-deploy]$ cat elasticsearch-operator.yml 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-operators-redhat
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-operators-redhat
+  namespace: openshift-operators-redhat
+spec: {}
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: "elasticsearch-operator"
+  namespace: "openshift-operators-redhat"
+spec:
+  channel: "4.6"
+  installPlanApproval: "Automatic"
+  source: "redhat-operators"
+  sourceNamespace: "openshift-marketplace"
+  name: "elasticsearch-operator"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - endpoints
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-k8s
+  namespace: openshift-operators-redhat
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-k8s
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-k8s
+    namespace: openshift-operators-redhat
+---
+[student@workstation logging-deploy]$ cat event-router.yml 
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+---
+apiVersion: authorization.openshift.io/v1
+kind: ClusterRole
+metadata:
+  name: event-reader
+rules:
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["get", "watch", "list"]
+---
+apiVersion: authorization.openshift.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: event-reader-binding
+subjects:
+- kind: ServiceAccount
+  name: eventrouter
+  namespace: openshift-logging
+roleRef:
+  kind: ClusterRole
+  name: event-reader
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+data:
+  config.json: |-
+    {
+      "sink": "stdout"
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventrouter
+  namespace: openshift-logging
+  labels:
+    component: eventrouter
+    logging-infra: eventrouter
+    provider: openshift
+spec:
+  selector:
+    matchLabels:
+      component: eventrouter
+      logging-infra: eventrouter
+      provider: openshift
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        component: eventrouter
+        logging-infra: eventrouter
+        provider: openshift
+      name: eventrouter
+    spec:
+      serviceAccount: eventrouter
+      containers:
+        - name: kube-eventrouter
+          image: registry.redhat.io/openshift4/ose-logging-eventrouter:latest
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+          - name: config-volume
+            mountPath: /etc/eventrouter
+      volumes:
+        - name: config-volume
+          configMap:
+            name: eventrouter
+---
+[student@workstation logging-deploy]$ cat logging-operator.yml 
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-logging
+  annotations:
+    openshift.io/node-selector: ""
+  labels:
+    openshift.io/cluster-monitoring: "true"
+---
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  targetNamespaces:
+    - openshift-logging
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: cluster-logging
+  namespace: openshift-logging
+spec:
+  channel: "4.6"
+  name: cluster-logging
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+---
+[student@workstation logging-deploy]$
